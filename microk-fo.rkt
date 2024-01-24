@@ -1,23 +1,26 @@
 #lang racket
 (provide
-  (all-from-out "common.rkt")
-  (struct-out disj)
-  (struct-out conj)
-  (struct-out relate)
-  (struct-out ==)
-  (struct-out =/=)
-  (struct-out symbolo)
-  (struct-out stringo)
-  (struct-out numbero)
-  (struct-out not-symbolo)
-  (struct-out not-stringo)
-  (struct-out not-numbero)
-  (struct-out mplus)
-  (struct-out bind)
-  (struct-out pause)
-  step
-  mature
-  mature?)
+ (all-from-out "common.rkt")
+ (struct-out disj)
+ (struct-out conj)
+ (struct-out relate)
+ (struct-out ==)
+ (struct-out =/=)
+ (struct-out symbolo)
+ (struct-out stringo)
+ (struct-out numbero)
+ (struct-out not-symbolo)
+ (struct-out not-stringo)
+ (struct-out not-numbero)
+ (struct-out mplus)
+ (struct-out bind)
+ (struct-out pause)
+ step-counter
+ step-reset!
+ step-count!
+ step
+ mature
+ mature?)
 
 (require "common.rkt")
 
@@ -36,6 +39,14 @@
 (struct bind     (bind-s bind-g)          #:prefab)
 (struct mplus    (mplus-s1 mplus-s2)      #:prefab)
 (struct pause    (pause-state pause-goal) #:prefab)
+
+;; counting steps
+(define step-counter 0)
+(define step-reset!
+  (lambda (body) (set! step-counter 0)
+    body))
+(define step-count!
+  (lambda (stream) (set! step-counter (+ 1 step-counter)) stream))
 
 (define (mature? s) (or (not s) (pair? s)))
 (define (mature s)
@@ -60,7 +71,7 @@
     ((not-numbero t) (state->stream (distypify t number? st)))))
 
 (define (step s)
-  (match s
+  (match (step-count! s)
     ((mplus s1 s2)
      (let ((s1 (if (mature? s1) s1 (step s1))))
        (cond ((not s1) s2)

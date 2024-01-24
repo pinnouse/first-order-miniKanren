@@ -21,8 +21,14 @@
  run*/step
  step
 
+ step-counter
+ step-reset!
+ step-count!
+
  explore/stream
- explore)
+ explore/stream-take
+ explore
+ explore-take)
 
 (require "microk-fo.rkt")
 (require "mk-fo.rkt")
@@ -292,6 +298,74 @@
                  (cons (cons i s) undo)))
           (else (invalid)))))
 
+(define (explore/stream-take step qvars s)
+  (define margin "| ")
+  (define (pp prefix v) (pprint/margin margin prefix v))
+  (define (pp/qvars vs)
+    (define (qv-prefix qv) (string-append " " (symbol->string qv) " = "))
+    (define qv-prefixes (and qvars (map qv-prefix qvars)))
+    (if qv-prefixes
+        (for-each (lambda (prefix v) (pp prefix v)) qv-prefixes vs)
+        (for-each (lambda (v) (pp " " v)) vs)))
+  (define (print-choice s)
+    (match s
+      ((pause st g)
+       (pp/qvars (walked-term initial-var st))
+       (define cxs (walked-term (goal->constraints st g) st))
+       (unless (null? cxs)
+         (displayln (string-append margin " Constraints:"))
+         (for-each (lambda (v) (pp " * " v)) cxs))
+       (when (null? cxs)
+         (displayln (string-append margin " No constraints"))))))
+  (let loop ((s (stream->choices s)) (undo '()))
+    (define previous-choice
+      (and (pair? undo)
+           (let* ((i.s (car undo)) (i (car i.s)) (s (cdr i.s)))
+             (list-ref (dropf s state?) (- i 1)))))
+    (define results (takef s state?))
+    (define choices (dropf s state?))
+    (display "\n========================================")
+    (displayln "========================================")
+    (unless (= (length results) 0)
+      (printf "Number of results: ~a\n" (length results))
+      (for-each (lambda (st)
+                  (pp/qvars (walked-term initial-var st))
+                  (newline))
+                results))
+    (when (and previous-choice (null? results))
+      (printf "Previous Choice:\n")
+      (print-choice previous-choice)
+      (newline))
+    (printf "Current Depth: ~a\n" (length undo))
+    (if (= 0 (length choices))
+        (if (= (length results) 0)
+            (printf "Choice FAILED!  Undo to continue.\n")
+            (printf "Finished in steps: ~a\n" step-counter))
+        (printf "Number of Choices: ~a\n" (length choices)))
+    (for-each (lambda (i s)
+                (printf (string-append "\n" margin "Choice ~s:\n") (+ i 1))
+                (print-choice s))
+              (range (length choices)) choices)
+    (printf "\n[h]elp, [u]ndo, or choice number> \n")
+    (define (invalid)
+      (displayln "\nInvalid command or choice number.\nHit enter to continue.")
+      (loop s undo))
+    (unless (> (length results) 0)
+      (define i (read))
+      (cond ((eof-object? i) (newline))
+            ((or (eq? i 'h) (eq? i 'help))
+             (displayln
+              (string-append "\nType either the letter 'u' or the"
+                             " number following one of the listed choices."
+                             "\nHit enter to continue."))
+             (loop s undo))
+            ((and (or (eq? i 'u) (eq? i 'undo)) (pair? undo))
+             (loop (cdar undo) (cdr undo)))
+            ((and (integer? i) (<= 1 i) (<= i (length choices)))
+             (loop (stream->choices (step (list-ref choices (- i 1))))
+                   (cons (cons i s) undo)))
+            (else (invalid))))))
+
 (define-syntax explore
   (syntax-rules (query)
     ((_ step (query (qvars ...) body ...))
@@ -299,3 +373,11 @@
                     'step '(query (qvars ...) body ...))
             (explore/stream step '(qvars ...) (query (qvars ...) body ...))))
     ((_ step stream) (explore/stream step #f stream))))
+
+(define-syntax explore-take
+  (syntax-rules (query)
+    ((_ step (query (qvars ...) body ...))
+     (begin (printf "Using step procedure: ~s\nExploring query:\n~s\n"
+                    'step '(query (qvars ...) body ...))
+            (explore/stream-take step '(qvars ...) (query (qvars ...) body ...))))
+    ((_ step stream) (explore/stream-take step #f stream))))
