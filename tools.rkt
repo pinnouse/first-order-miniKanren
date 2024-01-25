@@ -22,6 +22,7 @@
  step
 
  step-counter
+ step-reset-and-print!
  step-reset!
  step-count!
 
@@ -355,15 +356,14 @@
     (unless (> (length results) 0)
       (printf "\n[h]elp, [u]ndo, or choice number> \n")
       (define (invalid)
-        (displayln "\nInvalid command or choice number.\nHit enter to continue.")
+        (displayln "\nInvalid command or choice number.")
         (loop s undo))
       (define i (read))
       (cond ((eof-object? i) (newline))
             ((or (eq? i 'h) (eq? i 'help))
              (displayln
               (string-append "\nType either the letter 'u' or the"
-                             " number following one of the listed choices."
-                             "\nHit enter to continue."))
+                             " number following one of the listed choices."))
              (loop s undo))
             ((and (or (eq? i 'u) (eq? i 'undo)) (pair? undo))
              (loop (cdar undo) (cdr undo)))
