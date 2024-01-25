@@ -16,6 +16,7 @@
  (struct-out bind)
  (struct-out pause)
  step-counter
+ step-reset-and-print!
  step-reset!
  step-count!
  step
@@ -42,6 +43,9 @@
 
 ;; counting steps
 (define step-counter 0)
+(define step-reset-and-print!
+  (lambda (body) (printf "Steps: ~a\n" step-counter) (set! step-counter 0)
+    body))
 (define step-reset!
   (lambda (body) (set! step-counter 0)
     body))
