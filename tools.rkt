@@ -315,7 +315,7 @@
           (else (invalid)))))
 
 (define (explore/stream-take step qvars s)
-  (define margin "| ")
+  (define margin "")
   (define (pp prefix v) (pprint/margin margin prefix v))
   (define (pp/qvars vs)
     (define (qv-prefix qv) (string-append " " (symbol->string qv) " = "))
@@ -336,8 +336,6 @@
   (let loop ((s (stream->choices s)) (undo '()))
     (define results (takef s state?))
     (define choices (dropf s state?))
-    ;; (display "\n========================================")
-    ;; (displayln "========================================")
     (unless (= (length results) 0)
       (printf "Number of results: ~a\n" (length results))
       (for-each (lambda (st)
