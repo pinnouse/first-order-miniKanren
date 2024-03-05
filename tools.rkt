@@ -340,7 +340,7 @@
   (explore-node i (expand-choice (list-ref choices i) step) '()))
 (define (expand/depth node step depth)
   (define choices (explore-node-choices node))
-  (if (and (= 1 (length choices)) (not (state? (list-ref choices 0))))
+  (if (and (= 1 (length choices)) (not (state? (car choices))))
     (expand/depth (expand-choice-node choices step 0) step depth)
     (if (<= depth 0)
       node
@@ -374,6 +374,12 @@
                    [(expanded-node) (if x-ind (list-ref xchs x-ind) (expand/depth (expand-choice-node chs step choice) step depth))]
                    [(expanded-context) (explore-context choice (append xc hes) chs parent)])
        (explore-loc expanded-node expanded-context))]))
+(define (explore-multi-choice/depth exp-loc step choices depth)
+  (match exp-loc
+    [(explore-loc n p)
+     (if (> (length choices) 1)
+       (explore-multi-choice/depth (explore-choice exp-loc step (car choices)) step (cdr choices) depth)
+       (explore-choice/depth exp-loc step (car choices) depth))]))
 (define (explore-undo exp-loc)
   (match exp-loc
     [(explore-loc tree (explore-context i siblings ch ctx))
@@ -464,6 +470,10 @@
                            (lambda (x) (state? x)))]
         [valid-index (exact-nonnegative-integer? finished-index)])
     valid-index))
+(define (explore-tree-input-depth)
+  (printf "\n[u]ndo, or choices (period-separated)>\n")
+  (define input (read))
+  (string-split (~s input) "."))
 
 (define (drive/policy step qvars policy-print policy-read policy-done? init-state)
   (let loop ([s init-state])
@@ -483,12 +493,13 @@
     (policy-print s qvars depth)
     (unless (policy-done? s)
       (let* ([input (policy-read)]
+             [choices (map (lambda (i) (- (string->number i) 1)) input)]
              [tree (explore-loc-tree s)])
         (loop
           (cond
-            [(and (integer? input) (<= 1 input) (<= input (length (explore-node-choices tree))))
-             (explore-choice/depth s step (- input 1) depth)]
-            [(or (eq? input 'u) (eq? input 'undo)) (explore-undo s)]
+            [(andmap (lambda (x) (<= 0 x)) choices)
+             (explore-multi-choice/depth s step choices depth)]
+            [(or (eq? (car input) 'u) (eq? (car input) 'undo)) (explore-undo s)]
             [else s]))))))
 
 (define-syntax drive/stdio
@@ -511,7 +522,7 @@
        step
        '(qvars ...) 
        pp-explore-tree/depth
-       explore-tree-input
+       explore-tree-input-depth
        explore-tree-finished? 
        (init-tree/depth (query (qvars ...) body ...) step DEPTH)
        DEPTH)]))
