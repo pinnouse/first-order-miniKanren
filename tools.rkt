@@ -24,6 +24,8 @@
  
  drive/policy
  drive/stdio
+ drive/depth-policy
+ drive/depth-stdio
 
  explore/stream
  explore)
@@ -336,6 +338,22 @@
       [else expanded-choices])))
 (define (expand-choice-node choices step i)
   (explore-node i (expand-choice (list-ref choices i) step) '()))
+(define (expand/depth node step depth)
+  (define choices (explore-node-choices node))
+  (if (and (= 1 (length choices)) (not (state? (list-ref choices 0))))
+    (expand/depth (expand-choice-node choices step 0) step depth)
+    (if (<= depth 0)
+      node
+      (let* ([deep-exp-chs (map (lambda (xn) (expand/depth xn step (- depth 1))) (explore-node-expanded-choices node))]
+             [exp-indices (map explore-node-index deep-exp-chs)]
+             [to-expand-indices (remove* exp-indices (range (length choices)))]
+             [new-exp-chs (map (lambda (i) (expand/depth (expand-choice-node choices step i) step (- depth 1))) to-expand-indices)])
+        (explore-node (explore-node-index node) choices (append deep-exp-chs new-exp-chs))))))
+(define (init-tree/depth query step depth)
+  (let* ([choices (stream->choices query)]
+         [node (explore-node -1 choices '())]
+         [deep-node (expand/depth node step depth)])
+    (explore-loc deep-node explore-top)))
 
 ;; tree manipulation
 (define (explore-choice exp-loc step choice)
@@ -346,6 +364,16 @@
                    [(expanded-node) (if x-ind (list-ref xchs x-ind) (expand-choice-node chs step choice))]
                    [(expanded-context) (explore-context choice (append xc hes) chs parent)])
        (explore-loc expanded-node expanded-context))]))
+(define (explore-choice/depth exp-loc step choice depth)
+  (define tree (explore-loc-tree exp-loc))
+  (define choices (explore-node-choices tree))
+  (match exp-loc
+    [(explore-loc (explore-node i chs xchs) parent)
+     (let*-values ([(x-ind) (index-where xchs (lambda (xn) (= choice (explore-node-index xn))))]
+                   [(xc hes) (if (not x-ind) (values '() xchs) (split-at xchs x-ind))]
+                   [(expanded-node) (if x-ind (list-ref xchs x-ind) (expand/depth (expand-choice-node chs step choice) step depth))]
+                   [(expanded-context) (explore-context choice (append xc hes) chs parent)])
+       (explore-loc expanded-node expanded-context))]))
 (define (explore-undo exp-loc)
   (match exp-loc
     [(explore-loc tree (explore-context i siblings ch ctx))
@@ -353,26 +381,26 @@
     [(explore-loc t 'X-TOP) (explore-loc t 'X-TOP)]))
 
 ;; pretty-print functions
-(define (pp/qvars qvars vs)
+(define (pp/qvars qvars vs margin)
   (define (qv-prefix qv) (string-append " " (symbol->string qv) " = "))
   (define qv-prefixes (and qvars (map qv-prefix qvars)))
   (if qv-prefixes
-      (for-each (lambda (prefix v) (pprint/margin "" prefix v)) qv-prefixes vs)
-      (for-each (lambda (v) (pprint/margin "" " " v)) vs)))
-(define (pprint-choice s qvars)
+      (for-each (lambda (prefix v) (pprint/margin margin prefix v)) qv-prefixes vs)
+      (for-each (lambda (v) (pprint/margin margin " " v)) vs)))
+(define (pprint-choice s qvars margin)
   (match s
     [(pause st g)
-      (pp/qvars qvars (walked-term initial-var st))
+      (pp/qvars qvars (walked-term initial-var st) margin)
       (define cxs (walked-term (goal->constraints st g) st))
       (unless (null? cxs)
-        (displayln "Constraints:")
-        (for-each (lambda (v) (pprint/margin "" " * " v)) cxs))
+        (displayln (string-append margin "Constraints:"))
+        (for-each (lambda (v) (pprint/margin margin " * " v)) cxs))
       (when (null? cxs)
-        (displayln "No constraints")
+        (displayln (string-append margin "No constraints"))
         (newline))]))
-(define (pprint-result s qvars)
-  (displayln "Result:")
-  (pp/qvars qvars (walked-term initial-var s)))
+(define (pprint-result s qvars margin)
+  (pp/qvars qvars (walked-term initial-var s) margin)
+  (newline))
 (define (pprint-choices choices qvars)
   (define chs (dropf choices state?))
   (define results (takef choices state?))
@@ -381,15 +409,40 @@
   (unless (null? chs)
     (printf "Number of Choices: ~a\n" (length chs))
     (for-each (lambda (i s)
-                (printf (string-append "\nChoice ~s:\n") (+ i 1))
-                (pprint-choice s qvars))
+                (printf (string-append "Choice ~s:\n") (+ i 1))
+                (pprint-choice s qvars ""))
               (range (length chs)) chs))
   (unless (null? results)
     (printf "Number of results: ~a\n" (length results))
     (for-each (lambda (st)
-                (pprint-result st qvars)
-                (newline))
+                (pprint-result st qvars ""))
               results)))
+(define (pp-ch/depth node qvars depth prefix)
+  (define options (explore-node-expanded-choices node))
+  (define choices (dropf (explore-node-choices node) state?))
+  (define results (takef (explore-node-choices node) state?))
+  (define margin (list->string (make-list (string-length prefix) #\space)))
+  (newline)
+  (when (and (= 0 (length options)) (not (non-empty-string? prefix)))
+    (printf "No more choices available. Undo to continue.\n"))
+  (unless (null? options)
+    (printf (string-append margin "Number of Choices: ~a\n") (length options))
+    (for-each (lambda (n)
+                (let* ([i (explore-node-index n)]
+                       [next-prefix (string-append prefix (~a (+ i 1)) ".")])
+                  (printf (string-append "\n" margin "Choice " prefix "~s:\n") (+ i 1))
+                  (pprint-choice (list-ref choices i) qvars margin)
+                  (when (> depth 0)
+                    (pp-ch/depth n qvars (- depth 1) next-prefix))))
+              options))
+  (unless (null? results)
+    (printf (string-append margin "Number of results: ~a\n") (length results))
+    (for-each (lambda (st)
+                (displayln (string-append margin "Result:"))
+                (pprint-result st qvars margin))
+              results)))
+(define (pprint-choices/depth node qvars depth)
+  (pp-ch/depth node qvars depth ""))
 
 ;; policy-print, policy-read, policy-done?
 (define (pp/explore-tree exp-loc qvars)
@@ -397,6 +450,9 @@
   #| (printf "Tree: ~s\n" tree) |#
   #| (printf "Context: ~s\n" (explore-loc-context exp-loc)) |#
   (pprint-choices (explore-node-choices tree) qvars))
+(define (pp-explore-tree/depth exp-loc qvars depth)
+  (define tree (explore-loc-tree exp-loc))
+  (pprint-choices/depth tree qvars depth))
 (define (explore-tree-input)
   (printf "\n[u]ndo, or choice number> \n")
   (read))
@@ -422,6 +478,19 @@
             [(or (eq? input 'u) (eq? input 'undo)) (explore-undo s)]
             [else s]))))))
 
+(define (drive/depth-policy step qvars policy-print policy-read policy-done? init-state depth)
+  (let loop ([s init-state])
+    (policy-print s qvars depth)
+    (unless (policy-done? s)
+      (let* ([input (policy-read)]
+             [tree (explore-loc-tree s)])
+        (loop
+          (cond
+            [(and (integer? input) (<= 1 input) (<= input (length (explore-node-choices tree))))
+             (explore-choice/depth s step (- input 1) depth)]
+            [(or (eq? input 'u) (eq? input 'undo)) (explore-undo s)]
+            [else s]))))))
+
 (define-syntax drive/stdio
   (syntax-rules (query)
     [(_ step (query (qvars ...) body ...))
@@ -432,6 +501,20 @@
        explore-tree-input
        explore-tree-finished? 
        (init-explore (query (qvars ...) body ...)))]))
+
+(define DEPTH 3)
+
+(define-syntax drive/depth-stdio
+  (syntax-rules (query)
+    [(_ step (query (qvars ...) body ...))
+     (drive/depth-policy
+       step
+       '(qvars ...) 
+       pp-explore-tree/depth
+       explore-tree-input
+       explore-tree-finished? 
+       (init-tree/depth (query (qvars ...) body ...) step DEPTH)
+       DEPTH)]))
 
 (define-syntax explore
   (syntax-rules (query)
