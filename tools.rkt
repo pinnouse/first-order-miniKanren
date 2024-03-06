@@ -501,7 +501,7 @@
              [tree (explore-loc-tree s)])
         (loop
           (cond
-            [(andmap (lambda (x) (<= 0 x)) choices)
+            [(andmap (lambda (x) (and (integer? x) (<= 0 x))) choices)
              (explore-multi-choice/depth s step choices depth)]
             [(or (eq? (car input) 'u) (eq? (car input) 'undo)) (explore-undo s)]
             [else s]))))))
