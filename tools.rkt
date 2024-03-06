@@ -436,12 +436,13 @@
     (for-each (lambda (n)
                 (let* ([i (explore-node-index n)]
                        [next-prefix (string-append prefix (~a (+ i 1)) ".")]
-                       [choice (list-ref choices i)])
+                       [choice (list-ref choices i)]
+                       [is-result (state? choice)])
                   (printf (string-append "\n" margin "Choice " prefix "~s:\n") (+ i 1))
-                  (if (state? choice)
+                  (if is-result
                     (pprint-result choice qvars margin)
                     (pprint-choice (list-ref choices i) qvars margin))
-                  (when (> depth 0)
+                  (when (and (> depth 0) (not is-result))
                     (pp-ch/depth n qvars (- depth 1) next-prefix))))
               options))
   (unless (null? results)
