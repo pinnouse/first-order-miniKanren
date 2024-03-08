@@ -561,7 +561,7 @@
     (policy-print s qvars depth)
     (unless (policy-done? s)
       (let* ([input (policy-read)]
-             [choices (map (lambda (i) (- (or (string->number i) 1) 1)) input)]
+             [choices (map (lambda (i) (and (string->number i) (- (string->number i) 1))) input)]
              [tree (explore-loc-tree s)])
         (loop
           (cond
